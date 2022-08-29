@@ -1,0 +1,47 @@
+﻿<Window x:Class="AsyncThreadsComparison.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:AsyncThreadsComparison"
+        mc:Ignorable="d"
+        Title="Demo approaches comparison" Height="1024" Width="768">
+
+    <Window.Resources>
+        
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0">
+            <Button x:Name="SyncRun" Content="Synchronous Run"/>
+            <Button x:Name="AsyncRun" Content="Async Run" />
+            <Button x:Name="AsyncParallelRun" Content="AsyncParallel Run" />
+            <Button x:Name="ParallelForRun" Content="Parallel.For Run"/>
+            <Button x:Name="ThreadsRun" Content="Threads Run" />
+            <Button x:Name="WorkersRun" Content="Workers Run" />
+            <Button x:Name="ThreadPoolRun" Content="ThreadPool Run" />
+            <Button x:Name="SameIpAddressRun" Content="ThreadPool with same global variable Run" />
+            <Button x:Name="SameIpAddressWithLockRun" Content="Scan with lock Run" />
+            <Button x:Name="SameIpAddressWithTryFinallyLockRun" Content="Scan with lock try finally Run" />
+        </StackPanel>
+
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                <TextBlock x:Name="Output" HorizontalAlignment="Left" VerticalAlignment="Top" />
+            </ScrollViewer>
+
+            <Button Grid.Row="1" Style="{StaticResource ResetButton}" x:Name="Reset" Content="Reset" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+        </Grid>
+
+    </Grid>
+</Window>
