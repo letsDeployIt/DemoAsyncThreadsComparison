@@ -1,8 +1,8 @@
-﻿using System.Net;
+﻿using NetworkSearchApproachesComparison.Models;
+using System.Net;
 using System.Net.Sockets;
-using NetworkSearchApproachesComparison.Models;
 
-namespace NetworkSearchApproachesComparison.Services.NetworkDeviceService;
+namespace AsyncThreadsComparison.Services.NetworkDeviceService;
 
 public class NetworkDeviceService : INetworkDeviceService
 {
@@ -17,7 +17,8 @@ public class NetworkDeviceService : INetworkDeviceService
     public void GetLocalhostIP()
     {
         var host = Dns.GetHostEntry(Dns.GetHostName());
-        foreach (var ipAddress in host.AddressList)
+
+        foreach (IPAddress ipAddress in host.AddressList)
         {
             if (ipAddress.AddressFamily == AddressFamily.InterNetwork)
             {

@@ -5,11 +5,13 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AsyncThreadsComparison"
         mc:Ignorable="d"
-        Title="Demo approaches comparison" Height="1024" Width="768">
+        Title="Demo approaches comparison"
+        Height="768" Width="1024"
+        WindowStartupLocation="CenterScreen">
 
-    <Window.Resources>
-        
-    </Window.Resources>
+    <Window.DataContext>
+        <local:MainWindowViewModel />
+    </Window.DataContext>
 
     <Grid>
         <Grid.ColumnDefinitions>
@@ -18,16 +20,16 @@
         </Grid.ColumnDefinitions>
 
         <StackPanel Grid.Column="0">
-            <Button x:Name="SyncRun" Content="Synchronous Run"/>
-            <Button x:Name="AsyncRun" Content="Async Run" />
-            <Button x:Name="AsyncParallelRun" Content="AsyncParallel Run" />
-            <Button x:Name="ParallelForRun" Content="Parallel.For Run"/>
-            <Button x:Name="ThreadsRun" Content="Threads Run" />
-            <Button x:Name="WorkersRun" Content="Workers Run" />
-            <Button x:Name="ThreadPoolRun" Content="ThreadPool Run" />
+            <Button Content="Synchronous Run" Command="{Binding SyncRunCommand}" />
+            <Button Content="Async Run" Command="{Binding AsyncRunCommand}" />
+            <Button Content="AsyncParallel Run" Command="{Binding AsyncParallelRunCommand}" />
+            <Button Content="Parallel.For Run" Command="{Binding ParallelForRunCommand}" />
+            <Button Content="Threads Run" Command="{Binding ThreadsRunCommand}" />
+            <Button Content="ThreadPool Run" Command="{Binding ThreadPoolRunCommand}" />
             <Button x:Name="SameIpAddressRun" Content="ThreadPool with same global variable Run" />
             <Button x:Name="SameIpAddressWithLockRun" Content="Scan with lock Run" />
             <Button x:Name="SameIpAddressWithTryFinallyLockRun" Content="Scan with lock try finally Run" />
+            <Button x:Name="WorkersRun" Content="Workers Run" />
         </StackPanel>
 
         <Grid Grid.Column="1">
@@ -37,10 +39,10 @@
             </Grid.RowDefinitions>
 
             <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
-                <TextBlock x:Name="Output" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                <TextBlock x:Name="Output" Text="{Binding Text}" HorizontalAlignment="Left" VerticalAlignment="Top" />
             </ScrollViewer>
 
-            <Button Grid.Row="1" Style="{StaticResource ResetButton}" x:Name="Reset" Content="Reset" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+            <Button Grid.Row="1" Style="{StaticResource ResetButton}" Content="Reset" Command="{Binding ResetCommand}" />
         </Grid>
 
     </Grid>

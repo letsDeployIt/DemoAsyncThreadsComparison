@@ -1,63 +1,260 @@
-﻿using System;
+﻿using AsyncThreadsComparison.Dto;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
-using System.Net.Sockets;
-using System.Printing;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
-using AsyncThreadsComparison;
-using AsyncThreadsComparison.Dto;
-using Microsoft.EntityFrameworkCore;
-using NetworkSearchApproachesComparison.Models;
-using NetworkSearchApproachesComparison.Services.NetworkDeviceService;
 
-namespace NetworkSearchApproachesComparison.Services.NetworkService;
+namespace AsyncThreadsComparison.Services.NetworkService;
 
 public class NetworkService : INetworkService
 {
-    private const byte MAX_NETWORK_DEVICES = 10;
-    private readonly Network _network;
-    private readonly INetworkDeviceService _networkDeviceService;
+    private const byte MAX_NETWORK_DEVICES = byte.MaxValue;
+    private const int TIMEOUT = 10000;
+
     private readonly object _lock = new object();
-    private bool _lockTaken = false;
-    private List<ExecutionDetailsDto> devicesStatusForLock = new List<ExecutionDetailsDto>();
+    private readonly List<ExecutionDetailsDto> devicesStatusForLock = new List<ExecutionDetailsDto>();
 
-    public NetworkService(Network network, INetworkDeviceService networkDeviceService)
+    private bool _lockTaken;
+
+    private static byte[] GetNetworkBase()
     {
-        _network = network;
-        _networkDeviceService = networkDeviceService;
+        //var host = Dns.GetHostEntry(Dns.GetHostName());
+        //foreach (var ip in host.AddressList)
+        //{
+        //    if (ip.AddressFamily == AddressFamily.InterNetwork)
+        //    {
+        //        var aaaa = ip.ToString();
+        //    }
+        //}
+
+        return new byte[] { 192, 168, 3, 0 };//{ localhostIP[0], localhostIP[1], localhostIP[2], 0 };
+    }
+
+    private static IPAddress CombineDeviceIP(byte[] networkBase, byte lastByte)
+    {
+        byte[] nb = new byte[networkBase.Length];
+        networkBase.CopyTo(nb, 0);
+        nb[3] = lastByte;
+
+        return new IPAddress(nb);
     }
 
 
-    public byte[] GetNetworkBase(byte[] localhostIP)
-    {
-        return new byte[] { localhostIP[0], localhostIP[1], localhostIP[2], 0 };
-    }
+    #region INetworkService
 
-    public List<ExecutionDetailsDto> GetDevicesIpStatusMap()
+    public IEnumerable<ExecutionDetailsDto> GetDevicesIpStatusMap()
     {
         var result = new List<ExecutionDetailsDto>();
-        var networkBase = GetNetworkBase(_networkDeviceService.NetworkDevice.IpAddress.GetAddressBytes()); //GetLocalhostIP());
+        byte[] networkBase = GetNetworkBase();
+        using var p = new Ping();
 
-        for (byte i = 1; i <= MAX_NETWORK_DEVICES; i++)
+        for (byte i = 1; i < MAX_NETWORK_DEVICES; i++)
         {
-            networkBase[3] = i;
-            IPAddress deviceIP = new IPAddress(networkBase);
-            Ping p = new Ping();
-            PingReply rep = p.Send(deviceIP);
+            IPAddress ip = CombineDeviceIP(networkBase, i);
 
-            result.Add(new ExecutionDetailsDto { ProcessId = Environment.ProcessId, ManagedThreadId = Thread.CurrentThread.ManagedThreadId, IPAddress = deviceIP, IPStatus = rep.Status});
+            PingReply rep = p.Send(ip, TIMEOUT);
+
+            var executionDetailsDto = new ExecutionDetailsDto
+            {
+                ManagedThreadId = Thread.CurrentThread.ManagedThreadId,
+                IPAddress = ip,
+                IPStatus = rep.Status
+            };
+
+            result.Add(executionDetailsDto);
         }
 
         return result;
     }
 
-    private Dictionary<IPAddress, IPStatus> PingDevice(MainWindow window, Dictionary<IPAddress, IPStatus> devicesStatus, byte[] networkBase,
-        byte lastByte)
+    public async Task<IEnumerable<ExecutionDetailsDto>> GetDevicesIpStatusMapAsync()
+    {
+        var result = new List<ExecutionDetailsDto>();
+        byte[] networkBase = GetNetworkBase();
+
+        using var p = new Ping();
+
+        for (byte i = 0; i < MAX_NETWORK_DEVICES; i++)
+        {
+            IPAddress ip = CombineDeviceIP(networkBase, i);
+
+            PingReply rep = await p.SendPingAsync(ip, TIMEOUT);
+
+            var dto = new ExecutionDetailsDto
+            {
+                ManagedThreadId = Thread.CurrentThread.ManagedThreadId,
+                IPAddress = ip,
+                IPStatus = rep.Status
+            };
+
+            result.Add(dto);
+        }
+
+        return result;
+    }
+
+
+    public async Task<IEnumerable<ExecutionDetailsDto>> GetDevicesIpStatusMapParallelAsync()
+    {
+        var result = new List<ExecutionDetailsDto>();
+        var tasks = new List<Task<List<ExecutionDetailsDto>>>();
+        byte[] networkBase = GetNetworkBase();
+
+        for (byte i = 1; i < MAX_NETWORK_DEVICES; i++)
+        {
+            IPAddress ip = CombineDeviceIP(networkBase, i);
+
+            Task<List<ExecutionDetailsDto>> item = Task.Run(() => PingDeviceParallelTasks(result, ip));
+
+            tasks.Add(item);
+        }
+
+        await Task.WhenAll(tasks);
+
+        return result;
+    }
+
+    private List<ExecutionDetailsDto> PingDeviceParallelTasks(List<ExecutionDetailsDto> result, IPAddress ip)
+    {
+        PingReply rep;
+
+        using (var p = new Ping())
+        {
+            rep = p.Send(ip, TIMEOUT);
+        }
+
+        var dto = new ExecutionDetailsDto
+        {
+            ManagedThreadId = Thread.CurrentThread.ManagedThreadId,
+            IPAddress = ip,
+            IPStatus = rep.Status
+        };
+
+        result.Add(dto);
+
+        return result;
+    }
+
+
+    public IEnumerable<ExecutionDetailsDto> GetDevicesIpStatusMapParallelFor()
+    {
+        var result = new ConcurrentBag<ExecutionDetailsDto>();
+        byte[] networkBase = GetNetworkBase();
+
+        Parallel.For(1, MAX_NETWORK_DEVICES, i => PingDeviceParallelFor(result, networkBase, i));
+
+        return result;
+    }
+
+    private void PingDeviceParallelFor(ConcurrentBag<ExecutionDetailsDto> result, byte[] networkBase, int i)
+    {
+        IPAddress ip = CombineDeviceIP(networkBase, (byte)i);
+        PingReply rep;
+
+        using (var p = new Ping())
+        {
+            rep = p.Send(ip, TIMEOUT);
+        }
+
+        var item = new ExecutionDetailsDto
+        {
+            ManagedThreadId = Thread.CurrentThread.ManagedThreadId,
+            IPAddress = ip,
+            IPStatus = rep.Status
+        };
+
+        result.Add(item);
+    }
+
+    private volatile int _t_pingDeviceCounter;
+    private ExecutionDetailsDto[] _t_result;
+    private readonly byte[] _t_networkBase = GetNetworkBase();
+
+    public IEnumerable<ExecutionDetailsDto> GetDevicesIpStatusMapByThreads()
+    {
+        _t_pingDeviceCounter = 0;
+        _t_result = new ExecutionDetailsDto[MAX_NETWORK_DEVICES + 1];
+
+        for (byte i = 1; i < MAX_NETWORK_DEVICES; i++)
+        {
+            var t = new Thread(PingDevice)
+            {
+                IsBackground = true,
+                Priority = ThreadPriority.Lowest
+            };
+            t.Start(i);
+        }
+
+        const byte maxNetworkDevices = MAX_NETWORK_DEVICES - 1;
+
+        while (_t_pingDeviceCounter < maxNetworkDevices)
+        {
+            Thread.Sleep(100);
+        }
+
+        return _t_result.Where(x => x != null);
+    }
+
+    public IEnumerable<ExecutionDetailsDto> GetDevicesIpStatusMapThreadPool()
+    {
+        _t_pingDeviceCounter = 0;
+        _t_result = new ExecutionDetailsDto[MAX_NETWORK_DEVICES + 1];
+
+        for (byte i = 1; i < MAX_NETWORK_DEVICES; i++)
+        {
+            ThreadPool.QueueUserWorkItem(PingDevice, i);
+        }
+
+        while (ThreadPool.PendingWorkItemCount > 0)
+        {
+            Thread.Sleep(100);
+        }
+
+        return _t_result.Where(x => x != null);
+    }
+
+    private void PingDevice(object parameter)
+    {
+        var i = (byte)parameter;
+        IPAddress ip = CombineDeviceIP(_t_networkBase, i);
+        PingReply rep = null;
+
+        try
+        {
+            using (var p = new Ping())
+            {
+                rep = p.Send(ip, TIMEOUT);
+            }
+        }
+        catch (Exception exception)
+        {
+        }
+
+        var dto = new ExecutionDetailsDto
+        {
+            ManagedThreadId = Thread.CurrentThread.ManagedThreadId,
+            IPAddress = ip,
+            IPStatus = rep?.Status ?? IPStatus.IcmpError
+        };
+
+        _t_result[i] = dto;
+
+        lock (_lock)
+        {
+            _t_pingDeviceCounter = _t_pingDeviceCounter + 1;
+        }
+    }
+
+
+    #endregion INetworkService
+
+
+
+    private Dictionary<IPAddress, IPStatus> PingDevice(MainWindow window, Dictionary<IPAddress, IPStatus> devicesStatus, byte[] networkBase, byte lastByte)
     {
         networkBase[3] = lastByte;
         IPAddress deviceIP = new IPAddress(networkBase);
@@ -79,43 +276,7 @@ public class NetworkService : INetworkService
         return devicesStatus;
     }
 
-    private List<ExecutionDetailsDto> PingDeviceParalellTasks(List<ExecutionDetailsDto> devicesStatus, IPAddress deviceIP)
-    {
-        //byte[] nb = new byte[networkBase.Length];
-        //networkBase.CopyTo(nb, 0);
-        //nb[3] = lastByte;
-        //IPAddress deviceIP = new IPAddress(nb);
-        PingReply rep;
-
-        using (var p = new Ping())
-        {
-            rep = p.Send(deviceIP);
-        }
-
-        devicesStatus.Add( new ExecutionDetailsDto { ProcessId = Environment.ProcessId, ManagedThreadId = Thread.CurrentThread.ManagedThreadId, IPAddress = deviceIP, IPStatus = rep.Status });
-
-        //devicesStatus.TryAdd(deviceIP, rep.Status);
-
-        return devicesStatus;
-    }
-
-    private List<ExecutionDetailsDto> PingDeviceParalellFor(List<ExecutionDetailsDto> result, IPAddress deviceIP)
-    {
-        PingReply rep;
-
-        using (var p = new Ping())
-        {
-            rep = p.Send(deviceIP);
-        }
-        var item = new ExecutionDetailsDto { ProcessId = Environment.ProcessId, ManagedThreadId = Thread.CurrentThread.ManagedThreadId, IPAddress = deviceIP, IPStatus = rep.Status };
-
-        result.Add(item);
-
-        return result;
-    }
-
-    private ConcurrentDictionary<IPAddress, IPStatus> PingDevice(MainWindow window, ConcurrentDictionary<IPAddress, IPStatus> devicesStatus, byte[] networkBase,
-    byte lastByte)
+    private ConcurrentDictionary<IPAddress, IPStatus> PingDevice(MainWindow window, ConcurrentDictionary<IPAddress, IPStatus> devicesStatus, byte[] networkBase, byte lastByte)
     {
         networkBase[3] = lastByte;
         IPAddress deviceIP = new IPAddress(networkBase);
@@ -137,26 +298,6 @@ public class NetworkService : INetworkService
         return devicesStatus;
     }
 
-    private volatile int pingDeviceCounter;
-    private volatile IPStatus[] devicesStatus;
-
-    private void PingDevice(List<ExecutionDetailsDto> result, IPAddress deviceIP)
-    {
-        PingReply rep;
-
-        using (var p = new Ping())
-        {
-            rep = p.Send(deviceIP);
-        }
-
-        //var deviceIpBytes = deviceIP.GetAddressBytes();
-        //devicesStatus[deviceIpBytes[deviceIpBytes.Length-1] -1] = rep.Status;
-
-        pingDeviceCounter = pingDeviceCounter - 1;
-
-        result.Add(new ExecutionDetailsDto { ProcessId = Environment.ProcessId, ManagedThreadId = Thread.CurrentThread.ManagedThreadId, IPAddress = deviceIP, IPStatus = rep.Status });
-    }
-
     private ConcurrentDictionary<IPAddress, IPStatus> PingDevice(MainWindow window, IPAddress deviceIP, ConcurrentDictionary<IPAddress, IPStatus> devicesStatus)
     {
         PingReply rep;
@@ -173,23 +314,7 @@ public class NetworkService : INetworkService
         //});
         devicesStatus.TryAdd(deviceIP, rep.Status);
 
-        pingDeviceCounter = pingDeviceCounter - 1;
-
-        return devicesStatus;
-    }
-
-
-
-    private async Task<List<ExecutionDetailsDto>> PingDeviceAsync(IPAddress deviceIP, List<ExecutionDetailsDto> devicesStatus)
-    {
-        PingReply rep;
-
-        using (var p = new Ping())
-        {
-            rep = await p.SendPingAsync(deviceIP);
-        }
-
-        devicesStatus.Add(new ExecutionDetailsDto { ProcessId = Environment.ProcessId, ManagedThreadId = Thread.CurrentThread.ManagedThreadId, IPAddress = deviceIP, IPStatus = rep.Status });
+        _t_pingDeviceCounter = _t_pingDeviceCounter - 1;
 
         return devicesStatus;
     }
@@ -205,7 +330,7 @@ public class NetworkService : INetworkService
 
         lock (_lock)
         {
-            devicesStatusForLock.Add(new ExecutionDetailsDto { ProcessId = Environment.ProcessId, ManagedThreadId = Thread.CurrentThread.ManagedThreadId, IPAddress = deviceIP, IPStatus = rep.Status });
+            devicesStatusForLock.Add(new ExecutionDetailsDto { ManagedThreadId = Thread.CurrentThread.ManagedThreadId, IPAddress = deviceIP, IPStatus = rep.Status });
         }
 
         return devicesStatusForLock;
@@ -223,7 +348,7 @@ public class NetworkService : INetworkService
         try
         {
             System.Threading.Monitor.Enter(_lock, ref _lockTaken);
-            devicesStatusForLock.Add(new ExecutionDetailsDto { ProcessId = Environment.ProcessId, ManagedThreadId = Thread.CurrentThread.ManagedThreadId, IPAddress = deviceIP, IPStatus = rep.Status });
+            devicesStatusForLock.Add(new ExecutionDetailsDto { ManagedThreadId = Thread.CurrentThread.ManagedThreadId, IPAddress = deviceIP, IPStatus = rep.Status });
         }
         finally
         {
@@ -233,119 +358,10 @@ public class NetworkService : INetworkService
         return devicesStatusForLock;
     }
 
-    private IPAddress CombineDeviceIP(byte[] networkBase, byte lastByte)
-    {
-        byte[] nb = new byte[networkBase.Length];
-        networkBase.CopyTo(nb, 0);
-        nb[3] = lastByte;
-        return new IPAddress(nb);
-    }
-
-    public async Task<List<ExecutionDetailsDto>> GetDevicesIpStatusMapAsync()
-    {
-
-        var result = new List<ExecutionDetailsDto>();
-        var tasks = new List<Task<List<ExecutionDetailsDto>>>();
-        byte[] networkBase = GetNetworkBase(_networkDeviceService.NetworkDevice.IpAddress.GetAddressBytes());
-
-        for (byte i = 1; i <= MAX_NETWORK_DEVICES; i++)
-        {
-            byte lastByte = i;
-            await PingDeviceAsync(CombineDeviceIP(networkBase, lastByte), result);
-        }
-
-        return result;
-    }
-
-    public async Task<List<ExecutionDetailsDto>> GetDevicesIpStatusMapParallelAsync()
-    {
-
-        var result = new List<ExecutionDetailsDto>();
-        var tasks = new List<Task<List<ExecutionDetailsDto>>>();
-        byte[] networkBase = GetNetworkBase(_networkDeviceService.NetworkDevice.IpAddress.GetAddressBytes());
-
-        for (byte i = 1; i <= MAX_NETWORK_DEVICES; i++)
-        {
-            byte lastByte = i;
-            tasks.Add(Task.Run(() => PingDeviceParalellTasks(result, CombineDeviceIP(networkBase, (byte)lastByte))));
-        }
-
-        await Task.WhenAll(tasks);
-
-        return result;
-    }
-
-    public List<ExecutionDetailsDto> GetDevicesIpStatusMapParallelFor()
-    {
-
-        var result = new List<ExecutionDetailsDto>();
-        byte[] networkBase = GetNetworkBase(_networkDeviceService.NetworkDevice.IpAddress.GetAddressBytes());
-
-        Parallel.For(1, MAX_NETWORK_DEVICES + 1, i => {
-            //byte lastByte = i;
-            PingDeviceParalellFor(result, CombineDeviceIP(networkBase, (byte)i));
-        });
-
-        return result;
-    }
-
-    public List<ExecutionDetailsDto> GetDevicesIpStatusMapByThreads()
-    {
-        var result = new List<ExecutionDetailsDto>();
-        var threads = new List<Thread>();
-        byte[] networkBase = GetNetworkBase(_networkDeviceService.NetworkDevice.IpAddress.GetAddressBytes());
-        pingDeviceCounter = MAX_NETWORK_DEVICES;
-        devicesStatus = new IPStatus[MAX_NETWORK_DEVICES];
-
-        for (byte i = 1; i <= MAX_NETWORK_DEVICES; i++)
-        {
-            byte lastByte = i;
-            var t = new Thread(() => PingDevice(result, CombineDeviceIP(networkBase, lastByte)));
-            t.Start();
-            threads.Add(t);
-        }
-
-        while (pingDeviceCounter > 1)
-        {
-            Thread.Sleep(100);
-        }
-
-        return result;
-    }
-
-    public List<ExecutionDetailsDto> GetDevicesIpStatusMapThreadPool()
-    {
-        var result = new List<ExecutionDetailsDto>();
-        var tasks = new List<Task<List<ExecutionDetailsDto>>>();
-        byte[] networkBase = GetNetworkBase(_networkDeviceService.NetworkDevice.IpAddress.GetAddressBytes());
-        pingDeviceCounter = MAX_NETWORK_DEVICES;
-
-        //byte i = 1;
-        for (byte i = 1; i <= MAX_NETWORK_DEVICES; i++)
-        {
-            ThreadPool.QueueUserWorkItem((object state) => {
-                byte lastByte = i;
-                PingDevice(result, CombineDeviceIP(GetNetworkBase(_networkDeviceService.NetworkDevice.IpAddress.GetAddressBytes()), lastByte));
-            });
-        }
-        while (pingDeviceCounter > 1)
-        {
-            Thread.Sleep(100);
-        }
-
-        return result;
-
-        //void ThreadPoolCall(object state)
-        //{
-        //    byte  lastByte = i;
-        //    PingDevice(result, CombineDeviceIP(GetNetworkBase(_networkDeviceService.NetworkDevice.IpAddress.GetAddressBytes()), lastByte));
-        //}
-    }
-
     public async Task<List<ExecutionDetailsDto>> GetDevicesIpStatusMapWithLockAsync()
     {
         var tasks = new List<Task>();
-        byte[] networkBase = GetNetworkBase(_networkDeviceService.NetworkDevice.IpAddress.GetAddressBytes());
+        byte[] networkBase = GetNetworkBase();
 
         for (byte i = 1; i <= MAX_NETWORK_DEVICES; i++)
         {
@@ -365,7 +381,7 @@ public class NetworkService : INetworkService
         {
             System.Threading.Monitor.Enter(_lock, ref _lockTaken);
             var tasks = new List<Task>();
-            byte[] networkBase = GetNetworkBase(_networkDeviceService.NetworkDevice.IpAddress.GetAddressBytes());
+            byte[] networkBase = GetNetworkBase();
 
             for (byte i = 1; i <= MAX_NETWORK_DEVICES; i++)
             {
@@ -385,15 +401,6 @@ public class NetworkService : INetworkService
         return devicesStatusForLock;
     }
 
-    public void PrintResult(MainWindow window, List<ExecutionDetailsDto> result) {
-        //TODO: how correct sort list
-        result.Sort();
-        foreach (var item in result)
-        {
-            window.Output.Text += $"{Environment.NewLine}\t Process id {item.ProcessId}. Thread id {item.ManagedThreadId}: {item.IPAddress} {item.IPStatus}";
-        }
-    }
-
     //threads
     //threadpool
     //workers
@@ -408,6 +415,4 @@ public class NetworkService : INetworkService
     //TODO: Monitor, Semaphore, Mutex, Dispatcher, Process, Thread
     //TODO: is Mutex kinda service (Worker)?
     //TODO: how to access to code of dll
-
-
 }

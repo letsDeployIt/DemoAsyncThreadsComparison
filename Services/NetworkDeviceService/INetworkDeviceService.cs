@@ -1,8 +1,6 @@
-﻿using System.Net;
-using System.Net.Sockets;
-using NetworkSearchApproachesComparison.Models;
+﻿using NetworkSearchApproachesComparison.Models;
 
-namespace NetworkSearchApproachesComparison.Services.NetworkDeviceService;
+namespace AsyncThreadsComparison.Services.NetworkDeviceService;
 
 public interface INetworkDeviceService
 {

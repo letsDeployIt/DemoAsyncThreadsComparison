@@ -1,10 +1,20 @@
-﻿using System.Collections.Generic;
-using System.Net.NetworkInformation;
-using NetworkSearchApproachesComparison.Models;
+﻿using AsyncThreadsComparison.Dto;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
-namespace NetworkSearchApproachesComparison.Services.NetworkService;
+namespace AsyncThreadsComparison.Services.NetworkService;
 
 public interface INetworkService
 {
-    
+    IEnumerable<ExecutionDetailsDto> GetDevicesIpStatusMap();
+
+    Task<IEnumerable<ExecutionDetailsDto>> GetDevicesIpStatusMapAsync();
+
+    Task<IEnumerable<ExecutionDetailsDto>> GetDevicesIpStatusMapParallelAsync();
+
+    IEnumerable<ExecutionDetailsDto> GetDevicesIpStatusMapParallelFor();
+
+    IEnumerable<ExecutionDetailsDto> GetDevicesIpStatusMapByThreads();
+
+    IEnumerable<ExecutionDetailsDto> GetDevicesIpStatusMapThreadPool();
 }

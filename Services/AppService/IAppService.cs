@@ -1,4 +1,4 @@
-﻿namespace NetworkSearchApproachesComparison.Services.AppService;
+﻿namespace AsyncThreadsComparison.Services.AppService;
 
 public interface IAppService
 {
